@@ -151,17 +151,86 @@ Se imprimiu a resolução da sua tela, está tudo certo.
 
 ## 4. 🚀 Seu primeiro robô em 5 minutos
 
-Para aprender sem risco, este repositório inclui um **laboratório**: uma janelinha chamada **UIA-LAB**, feita só para treino, com um exemplar de cada tipo de controle (botões, caixas de texto, listas, tabela, árvore, abas, menu, barra de progresso, etc.).
+Para aprender sem risco, este guia traz o código de um **laboratório**: uma janelinha chamada **UIA-LAB**, feita só para treino, com um exemplar de cada tipo de controle (botões, caixas de texto, listas, tabela, árvore, abas, menu, barra de progresso, etc.).
 
 **Por que um laboratório?** Porque aprender automação mexendo nos *seus* programas de verdade é a receita para o desastre (um robô digitando no lugar errado pode apagar ou enviar algo que você não queria). O laboratório é seguro e previsível.
 
-### 4.1 Abra o laboratório
+### 4.1 Crie e abra o laboratório
+
+1. Copie o código abaixo (clique em **"Ver o código do laboratório"**) e salve num arquivo chamado `lab.ps1`.
+2. Abra o PowerShell na pasta onde salvou e rode:
 
 ```powershell
-powershell -STA -ExecutionPolicy Bypass -File scripts\lab_winforms.ps1
+powershell -STA -ExecutionPolicy Bypass -File lab.ps1
 ```
 
-Vai aparecer a janela **UIA-LAB**. Deixe-a aberta.
+<details>
+<summary><b>Ver o código do laboratório (lab.ps1)</b></summary>
+
+```powershell
+# Laboratorio proprio para testar o uiautomation (janela "UIA-LAB"), com AutomationId em tudo.
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$f = New-Object Windows.Forms.Form
+$f.Text = "UIA-LAB"; $f.Name = "frmLab"; $f.Width = 1000; $f.Height = 800; $f.StartPosition = "Manual"; $f.Left = 100; $f.Top = 60
+function Add($c,$name,$x,$y,$w,$h,$text){ $c.Name=$name; $c.Left=$x;$c.Top=$y;$c.Width=$w;$c.Height=$h; if($text){$c.Text=$text}; $f.Controls.Add($c); $c }
+$lbl = Add (New-Object Windows.Forms.Label) "lblStatus" 10 5 400 20 "evento: nenhum"
+$script:n = 0
+$btn = Add (New-Object Windows.Forms.Button) "btnClick" 10 30 120 28 "Clicar"
+$btn.Add_Click({ $script:n++; $lbl.Text = "evento: clique $script:n" })
+$btnD = Add (New-Object Windows.Forms.Button) "btnDesab" 140 30 120 28 "Desabilitado"; $btnD.Enabled = $false
+$chk = Add (New-Object Windows.Forms.CheckBox) "chkAceito" 10 65 150 24 "Aceito os termos"
+$chk.Add_CheckedChanged({ $lbl.Text = "evento: chk=" + $chk.Checked })
+$chk3 = Add (New-Object Windows.Forms.CheckBox) "chkTri" 170 65 150 24 "Tri-estado"; $chk3.ThreeState = $true
+$r1 = Add (New-Object Windows.Forms.RadioButton) "rdA" 10 95 80 24 "Opcao A"
+$r2 = Add (New-Object Windows.Forms.RadioButton) "rdB" 100 95 80 24 "Opcao B"
+$r1.Add_CheckedChanged({ if($r1.Checked){$lbl.Text="evento: radio A"} }); $r2.Add_CheckedChanged({ if($r2.Checked){$lbl.Text="evento: radio B"} })
+$cmb = Add (New-Object Windows.Forms.ComboBox) "cmbCor" 10 125 150 24 ""; $cmb.DropDownStyle="DropDownList"; [void]$cmb.Items.AddRange(@("Vermelho","Verde","Azul","Amarelo"))
+$cmb.Add_SelectedIndexChanged({ $lbl.Text = "evento: cor=" + $cmb.SelectedItem })
+$cmbE = Add (New-Object Windows.Forms.ComboBox) "cmbEditavel" 170 125 150 24 ""; [void]$cmbE.Items.AddRange(@("um","dois","tres"))
+$txt = Add (New-Object Windows.Forms.TextBox) "txtNome" 10 155 200 24 ""
+$txt.Add_TextChanged({ $lbl.Text = "evento: texto=" + $txt.Text })
+$pwd = Add (New-Object Windows.Forms.TextBox) "txtSenha" 220 155 150 24 ""; $pwd.UseSystemPasswordChar = $true
+$ml = Add (New-Object Windows.Forms.TextBox) "txtMulti" 10 185 360 80 "linha 1`r`nlinha 2`r`nlinha 3 com acentuacao: caoe"; $ml.Multiline=$true; $ml.ScrollBars="Vertical"
+$lb = Add (New-Object Windows.Forms.ListBox) "lstItens" 380 30 150 100 ""; [void]$lb.Items.AddRange(@("Item 1","Item 2","Item 3","Item 4")); $lb.SelectionMode="MultiExtended"
+$lv = Add (New-Object Windows.Forms.ListView) "lvTabela" 540 30 430 100 ""; $lv.View="Details"; $lv.FullRowSelect=$true; $lv.CheckBoxes=$true
+[void]$lv.Columns.Add("Nome",120); [void]$lv.Columns.Add("Qtd",60); [void]$lv.Columns.Add("Preco",80)
+foreach($r in @(@("Maca","3","1,50"),@("Banana","12","0,80"),@("Uva","1","7,00"))){ $i=New-Object Windows.Forms.ListViewItem($r[0]); [void]$i.SubItems.Add($r[1]); [void]$i.SubItems.Add($r[2]); [void]$lv.Items.Add($i) }
+$tv = Add (New-Object Windows.Forms.TreeView) "tvArvore" 380 140 200 125 ""
+$a=$tv.Nodes.Add("Raiz A"); [void]$a.Nodes.Add("Filho A1"); [void]$a.Nodes.Add("Filho A2"); $b=$tv.Nodes.Add("Raiz B"); $b.Nodes.Add("Filho B1").Nodes.Add("Neto B1a") | Out-Null
+$tb = Add (New-Object Windows.Forms.TrackBar) "trkVolume" 590 140 200 40 ""; $tb.Minimum=0; $tb.Maximum=100; $tb.Value=30
+$pb = Add (New-Object Windows.Forms.ProgressBar) "pbProgresso" 590 185 200 20 ""; $pb.Value=45
+$nud = Add (New-Object Windows.Forms.NumericUpDown) "nudQtd" 800 140 80 24 ""; $nud.Minimum=0;$nud.Maximum=50;$nud.Value=5
+$dt = Add (New-Object Windows.Forms.DateTimePicker) "dtpData" 590 215 200 24 ""
+$mc = Add (New-Object Windows.Forms.MonthCalendar) "calMes" 800 175 230 160 ""
+$tabs = Add (New-Object Windows.Forms.TabControl) "tabGeral" 10 275 360 120 ""
+$tp1 = New-Object Windows.Forms.TabPage; $tp1.Text="Aba Um"; $tp1.Name="tpUm"; $tp2 = New-Object Windows.Forms.TabPage; $tp2.Text="Aba Dois"; $tp2.Name="tpDois"
+$inner = New-Object Windows.Forms.Button; $inner.Text="Botao na Aba Dois"; $inner.Name="btnAbaDois"; $inner.Width=140; $inner.Left=10; $inner.Top=10; $tp2.Controls.Add($inner)
+$tabs.TabPages.Add($tp1); $tabs.TabPages.Add($tp2)
+$gb = Add (New-Object Windows.Forms.GroupBox) "grpCaixa" 380 275 200 120 "Grupo"
+$inG = New-Object Windows.Forms.CheckBox; $inG.Text="Dentro do grupo"; $inG.Name="chkGrupo"; $inG.Left=10;$inG.Top=25;$inG.Width=150; $gb.Controls.Add($inG)
+$lnk = Add (New-Object Windows.Forms.LinkLabel) "lnkSite" 590 250 200 20 "Link clicavel"
+$lnk.Add_LinkClicked({ $lbl.Text = "evento: link" })
+$dg = Add (New-Object Windows.Forms.DataGridView) "dgvDados" 10 405 560 150 ""; $dg.AllowUserToAddRows=$false
+[void]$dg.Columns.Add("c1","Produto"); [void]$dg.Columns.Add("c2","Estoque"); [void]$dg.Columns.Add("c3","Preco")
+[void]$dg.Rows.Add("Caneta","100","2,50"); [void]$dg.Rows.Add("Caderno","40","18,90"); [void]$dg.Rows.Add("Mochila","8","149,00")
+$pic = Add (New-Object Windows.Forms.PictureBox) "picImg" 590 345 120 80 ""; $pic.BackColor=[Drawing.Color]::Tomato
+$ms = New-Object Windows.Forms.MenuStrip; $ms.Name="menuPrincipal"
+$mArq = New-Object Windows.Forms.ToolStripMenuItem("Arquivo"); $mArq.Name="mnuArquivo"
+$mNovo = New-Object Windows.Forms.ToolStripMenuItem("Novo"); $mNovo.Name="mnuNovo"; $mNovo.Add_Click({ $lbl.Text="evento: menu Novo" })
+$mSair = New-Object Windows.Forms.ToolStripMenuItem("Sair do lab"); $mSair.Name="mnuSair"; $mSair.Add_Click({ $f.Close() })
+[void]$mArq.DropDownItems.Add($mNovo); [void]$mArq.DropDownItems.Add($mSair); [void]$ms.Items.Add($mArq); $f.MainMenuStrip=$ms; $f.Controls.Add($ms)
+$ss = New-Object Windows.Forms.StatusStrip; $ss.Name="statusBar"; [void]$ss.Items.Add("Pronto - barra de status"); $f.Controls.Add($ss)
+$ts = New-Object Windows.Forms.ToolStrip; $ts.Name="toolBar"; $tbtn=$ts.Items.Add("BotaoTool"); $tbtn.Name="tsbTool"; $tbtn.Add_Click({ $lbl.Text="evento: toolbar" }); $f.Controls.Add($ts)
+$f.Add_Shown({ $f.Activate() })
+[void]$f.ShowDialog()
+```
+
+</details>
+
+Vai aparecer a janela **UIA-LAB**. Deixe-a aberta. (O código só cria uma janela de treino na memória; não grava nada em disco. Para fechar, use *Arquivo → Sair do lab* ou o X.)
+
+> ℹ️ Os nomes do laboratório não têm acento de propósito, para o arquivo funcionar sem configurar codificação.
 
 ### 4.2 Encontre a janela
 
@@ -950,7 +1019,7 @@ Automação é poder. Algumas regras de convivência:
 - **Não burle proteções** (CAPTCHAs, bloqueios de segurança, limites de uso). Não é o propósito da ferramenta e pode ser crime ou quebra de contrato.
 - **Dados pessoais (LGPD):** se o robô lê telas com dados de clientes, ele está tratando dados pessoais. Não grave em logs, não envie para terceiros, não deixe em arquivos soltos.
 - **Senhas:** não coloque senhas no código-fonte. Use variáveis de ambiente ou um cofre de senhas.
-- **Cuidado com o repositório público:** nunca suba logs (`@AutomationLog.txt`), prints de tela com dados reais ou arquivos de configuração com segredos. O `.gitignore` deste repositório já ignora o log e o `.venv`.
+- **Cuidado com o repositório público:** nunca suba logs (`@AutomationLog.txt`), prints de tela com dados reais ou arquivos de configuração com segredos. Se você versiona o seu projeto, coloque `@AutomationLog.txt` e a pasta `.venv` no `.gitignore`.
 - **Ações destrutivas** (excluir, enviar, pagar, encerrar processos à força): sempre teste antes em ambiente de teste e exija confirmação.
 - **Quem opera um robô responde por ele.** Se ele errar, o erro é seu.
 
@@ -1021,53 +1090,29 @@ Dá, mas para planilhas e documentos existem bibliotecas bem melhores que lidam 
 
 ---
 
-## 21. 🗂️ O que tem neste repositório
+## 21. 🗂️ Onde está a documentação técnica
+
+Este repositório tem **só documentação**. Os exemplos de código para cada parte estão aqui neste README.
 
 ```
-uiautomation-estudo/
-├── README.md                     ← este guia
-├── docs/                         ← documentação técnica detalhada
-│   ├── README.md                  índice da documentação
-│   ├── 01-arquitetura.md          como a biblioteca é montada
-│   ├── 02-constantes-e-enums.md   todas as constantes (gerado)
-│   ├── 03-control.md              a classe Control em detalhe
-│   ├── 04-controles-especificos.md os 40 tipos e a matriz de habilidades
-│   ├── 05-patterns.md             os 34 patterns
-│   ├── 06-funcoes-win32.md        mouse, teclado, janelas, processos, hotkeys
-│   ├── 07-bitmap-clipboard-logger.md imagens, clipboard, logs
-│   ├── 08-bugs-e-pegadinhas.md    bugs e comportamentos surpreendentes
-│   ├── 09-dicas-e-receitas.md     receitas e depuração
-│   ├── 10-referencia-api-completa.md  TODAS as funções/classes (gerado)
-│   └── 11-internos-algoritmos.md  como tudo funciona por dentro
-├── dados/                        ← inventário JSON e lista de constantes (gerados)
-├── .gitignore                    ← ignora .venv, logs e o arquivo @AutomationLog.txt
-└── scripts/
-    ├── lab_winforms.ps1           o laboratório "UIA-LAB" para treinar
-    ├── labutil.py                 funções auxiliares dos testes
-    ├── 01_inventario.py           inventário automático do código da biblioteca
-    ├── 02_constantes_enums.py     gera a lista de constantes
-    ├── 03_funcoes_somente_leitura.py  testes que só leem estado
-    ├── 05_lab_arvore.py           despeja a árvore do laboratório
-    ├── 06_padroes.py              testa os patterns no laboratório
-    ├── 07_busca_navegacao.py      testa busca, tempo e navegação
-    └── 08_gerar_referencia.py     gera a referência completa
+UiAutomation-Doc/
+├── README.md                          ← este guia (com os exemplos)
+└── docs/                              ← documentação técnica detalhada
+    ├── README.md                       índice da documentação
+    ├── 01-arquitetura.md               como a biblioteca é montada
+    ├── 02-constantes-e-enums.md        todas as constantes
+    ├── 03-control.md                   a classe Control em detalhe
+    ├── 04-controles-especificos.md     os 40 tipos e a matriz de habilidades
+    ├── 05-patterns.md                  os 34 patterns
+    ├── 06-funcoes-win32.md             mouse, teclado, janelas, processos, hotkeys
+    ├── 07-bitmap-clipboard-logger.md   imagens, clipboard, logs
+    ├── 08-bugs-e-pegadinhas.md         bugs e comportamentos surpreendentes
+    ├── 09-dicas-e-receitas.md          receitas e depuração
+    ├── 10-referencia-api-completa.md   TODAS as funções, classes e métodos
+    └── 11-internos-algoritmos.md       como tudo funciona por dentro
 ```
 
-### Quer a documentação técnica?
-
-Comece por [`docs/README.md`](docs/README.md). Leitura sugerida: **01 → 03 → 05 → 08 → 09**. Os demais servem de consulta.
-
-### Quer reproduzir os testes?
-
-```powershell
-# 1. abra o laboratório
-powershell -STA -ExecutionPolicy Bypass -File scripts\lab_winforms.ps1
-
-# 2. em outro terminal, rode um dos scripts
-.\.venv\Scripts\python.exe -X utf8 scripts\06_padroes.py
-```
-
-> ℹ️ Os scripts `03_...` leem informações do seu computador (tamanho da tela, lista de janelas, processos, área de transferência). **Revise o que ele imprime antes de compartilhar a saída**, pois pode conter nomes de janelas e programas seus.
+Quer se aprofundar? Comece por [`docs/README.md`](docs/README.md). Leitura sugerida: **01 → 03 → 05 → 08 → 09**. Os demais servem de consulta.
 
 ---
 
@@ -1080,7 +1125,7 @@ Transparência é importante, ainda mais num material público.
 1. **Instalação** da biblioteca (versão 2.0.29) em um ambiente virtual.
 2. **Inventário automático**: um script percorreu o código e listou 140 classes, 549 métodos/propriedades e 117 funções.
 3. **Leitura integral do código-fonte** (um único arquivo de ~10.800 linhas), seção por seção: constantes, funções do Windows, mouse, teclado, janelas, processos, clipboard, `Bitmap`, os 34 patterns, a classe `Control` e todos os 40 tipos de controle.
-4. **Laboratório próprio** (`UIA-LAB`): uma janela com um exemplar de cada controle para testar os patterns, a busca e a navegação sem tocar em programas reais.
+4. **Laboratório próprio** (`UIA-LAB`, o código está na seção 4): uma janela com um exemplar de cada controle para testar os patterns, a busca e a navegação sem tocar em programas reais.
 5. **Segunda passada de leitura**, mais profunda, só no código, sobre os pontos que não foram testados.
 
 ### As etiquetas que você viu pelo texto

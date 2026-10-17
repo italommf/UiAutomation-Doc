@@ -1,6 +1,6 @@
 # Referência completa da API (gerada do código-fonte)
 
-> Gerada automaticamente por `scripts/08_gerar_referencia.py` a partir da AST de `uiautomation/uiautomation.py` (v2.0.29). Cobre **todas** as funções, classes, métodos e propriedades. O número é a linha no arquivo.
+> Gerada automaticamente a partir da AST de `uiautomation/uiautomation.py` (v2.0.29). Cobre **todas** as funções, classes, métodos e propriedades. O número é a linha no arquivo.
 
 Totais: **140 classes**, **549 métodos/propriedades**, **117 funções de módulo**.
 

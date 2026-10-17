@@ -2,7 +2,7 @@
 
 Estudo feito lendo **o código-fonte instalado** em
 `.venv/Lib/site-packages/uiautomation/` (um único módulo de ~10.850 linhas) e confirmando
-comportamentos num laboratório próprio (`scripts/lab_winforms.ps1`).
+comportamentos num laboratório próprio (o código dele está na seção 4 do [README principal](../README.md)).
 
 | Arquivo | Conteúdo |
 |---|---|
@@ -23,9 +23,4 @@ comportamentos num laboratório próprio (`scripts/lab_winforms.ps1`).
 - Dependência única: `comtypes`. Windows apenas.
 - `from uiautomation import *` e `import uiautomation as auto` expõem tudo (não há `__all__`); constantes como `SEARCH_INTERVAL` precisam ser alteradas em `uiautomation.uiautomation` (veja 01).
 
-## Regenerar partes automáticas
-```
-.venv\Scripts\python.exe -X utf8 scripts\01_inventario.py
-.venv\Scripts\python.exe -X utf8 scripts\02_constantes_enums.py
-.venv\Scripts\python.exe -X utf8 scripts\08_gerar_referencia.py
-```
+Os arquivos `02` e `10` foram gerados automaticamente a partir do código-fonte da biblioteca (análise da AST do `uiautomation.py`).
