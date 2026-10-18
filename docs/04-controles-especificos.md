@@ -1,4 +1,4 @@
-# 04 — Controles específicos (40 tipos)
+# 04 — Controles específicos (41 tipos)
 
 Cada classe só fixa `ControlType=ControlType.XxxControl` e adiciona métodos `GetXxxPattern()` (atalhos para `GetPattern(PatternId.Xxx)`) que devolvem o pattern ou `None`. Os comentários do código indicam o que o Microsoft docs diz sobre o suporte: *Must support* (obrigatório) ou *Conditional*.
 
@@ -59,7 +59,7 @@ Usa `TogglePattern.SetToggleState(On/Off)`; retorna o booleano de `SetToggleStat
 3. Se achar: `ScrollIntoView` se houver o pattern, e **clica no item** (mouse real!).
 4. Se não achar, tenta uma `ListControl(searchDepth=1)` direto sob o Desktop (popups que são filhos da raiz).
 5. Se falhar, loga amarelo e recolhe o combo. Retorna bool.
-> Sugestão (deduzida do código, não testada em combo): como `Select` usa clique real de mouse, quando o item existe como `ListItem` com `SelectionItemPattern`, ou o combo aceita `ValuePattern.SetValue(texto)`, esses caminhos evitam mexer no mouse. (No laboratório, `SetValue` num campo de texto e `SelectionItemPattern.Select()` em itens de lista funcionaram sem mouse.)
+> 🧪 Testado: no **WinForms** (`DropDownList` sem `ExpandCollapsePattern`) o `Select` usa o clique na borda direita e o app recebeu o evento (`'Verde'`); no **WPF** (com `ExpandCollapsePattern`) ele expande, acha o `ListItem` e clica (`'Azul'` selecionado). `Select('Roxo')` (inexistente) devolve `False`, loga em amarelo e recolhe o combo; `condition=lambda n: n.startswith('Am')` também funciona. Ele **usa o mouse**: se preferir não usar, expanda e use `SelectionItemPattern.Select()` do item (🧪 funciona no WPF).
 
 ### `TableControl.GetTableItemsValue(row=-1, column=-1)`
 Monta uma matriz: para cada filho do tabela, lista `cell.GetLegacyIAccessiblePattern().Value` dos filhos. **Bug**: usa `row > 0` e `column > 0`, então a **linha/coluna 0 nunca é selecionável** (devolve a tabela inteira). Além disso exige que todos os filhos tenham LegacyIAccessible.

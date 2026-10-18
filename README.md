@@ -2,7 +2,7 @@
 
 > **Em uma frase:** como fazer o Python "enxergar" e operar janelas, botões, campos e menus de qualquer programa do Windows, do jeito que uma pessoa faria, só que sem cansar, sem errar a digitação e sem reclamar.
 
-Este guia nasceu de um estudo completo da biblioteca **[uiautomation](https://github.com/yinkaisheng/Python-UIAutomation-for-Windows)** (versão **2.0.29**): li o código-fonte inteiro (cerca de 10 mil linhas), testei as funções principais num programa de laboratório criado só para isso e transformei tudo em explicações para quem **não é especialista**.
+Este guia nasceu de um estudo completo da biblioteca **[uiautomation](https://github.com/yinkaisheng/Python-UIAutomation-for-Windows)** (versão **2.0.29**): li o código-fonte inteiro (cerca de 10 mil linhas), **executei 773 verificações** em janelas de laboratório (WinForms e WPF) criadas só para isso, e transformei tudo em explicações para quem **não é especialista**.
 
 Não precisa saber nada de automação. Se você já escreveu um `print("olá")` em Python, consegue acompanhar.
 
@@ -456,6 +456,60 @@ Funciona em quase tudo, mas é o **mais frágil**: depende de a janela estar em 
 
 > **Regra prática:** se um pattern funciona, use o pattern. Só desça de nível se for necessário.
 
+### 🧭 Qual usar? Tabela de decisão rápida
+
+| Eu quero… | Use | Por quê |
+|---|---|---|
+| Apertar botão, link ou item de menu | `GetInvokePattern().Invoke(0)` | rápido, sem mouse, não depende de posição |
+| Marcar/desmarcar caixinha | `SetChecked(True)` ou `GetTogglePattern().Toggle(0)` | garante o estado final |
+| Escolher rádio, item de lista ou aba | `GetSelectionItemPattern().Select(0)` | seleciona direto |
+| Escrever num campo | `GetValuePattern().SetValue("texto", 0)` | instantâneo |
+| Escrever e o app valida tecla por tecla | `SendKeys("texto")` | gera eventos de teclado de verdade |
+| Abrir/fechar árvore, expansor | `GetExpandCollapsePattern().Expand(0)` | sem mouse |
+| Botão direito, duplo clique, arrastar, passar o mouse | `RightClick()`, `DoubleClick()`, `DragDrop(...)` | só o mouse faz |
+| Elemento sem nenhum pattern | `Click()` | último recurso |
+
+**Medido nos testes:** `Invoke(0)` levou **4 ms**, `Click` sem animação **58 ms** e `Click` padrão **129 ms** (+0,5 s de espera). O `Invoke` funciona com a janela **minimizada** e com o botão **coberto** por outra janela; o `Click` cai na janela de cima. Receitas e mais dicas: [`docs/13-guia-pratico.md`](docs/13-guia-pratico.md).
+
+### 🤔 Afinal, o que é esse `Invoke`?
+
+`Invoke` é a forma de **"apertar" um elemento sem usar o mouse**. Em vez de mover o cursor até o botão e clicar, o seu código diz ao Windows: *"peça ao programa para executar a ação principal deste botão"*. O programa recebe isso como se alguém tivesse clicado: o evento `Click` dispara de verdade.
+
+Por isso ele é tão bom:
+
+- **não mexe no seu mouse** (confirmado: o cursor não saiu do lugar);
+- **não depende da posição** do botão, do monitor, da escala do Windows nem do tamanho da janela;
+- é **rápido** (com `waitTime=0` levou 2 milissegundos).
+
+Mas tem uma pegadinha que quase ninguém conta e que foi confirmada nos testes: **o `Invoke` espera o clique terminar.** Ele só volta quando o programa termina de tratar o clique.
+
+| O botão… | O que o `Invoke` faz |
+|---|---|
+| faz algo rápido | volta quase na hora |
+| demora 3 segundos para processar | **espera os 3 segundos** (levou 3,39 s) |
+| abre uma **janela de aviso modal** (do tipo "OK/Cancelar") | **fica preso até alguém fechar a janela** |
+| abre um modal e ninguém fecha | desiste com erro de *timeout* depois de uns **66 segundos** |
+| está desabilitado | dá erro (`COMError`) na hora |
+
+E o pior: enquanto ele está preso, **qualquer outra consulta ao mesmo programa também espera** (e uma busca a partir da Área de Trabalho trava junto). O `Click()` de mouse não tem esse problema, porque só "aperta e solta" e volta.
+
+**Como lidar com botões que abrem diálogos:** rode o `Invoke` numa *thread* separada e continue o fluxo.
+
+```python
+import threading, uiautomation as auto
+
+def abrir():
+    with auto.UIAutomationInitializerInThread():            # obrigatório em threads
+        janela.ButtonControl(AutomationId="btnModal").GetInvokePattern().Invoke(0)
+
+threading.Thread(target=abrir, daemon=True).start()
+dialogo = auto.WindowControl(searchDepth=2, Name="Título do diálogo")
+if dialogo.Exists(5):
+    dialogo.ButtonControl(Name="OK").GetInvokePattern().Invoke()   # fecha o aviso
+```
+
+Se o elemento não tiver `Invoke`, tente `LegacyIAccessiblePattern.DoDefaultAction()` (mesmo comportamento, inclusive o de esperar) e, só por último, `Click()`.
+
 ---
 
 ## 8. 🧩 Os patterns: as "habilidades" de cada elemento
@@ -511,12 +565,16 @@ auto.WindowVisualState.Minimized    # 2
 
 ### O que aprendemos testando cada habilidade ✅
 
-- **Invoke**: dispara o evento do programa de verdade (o clique "contou").
+- **Invoke**: dispara o evento do programa de verdade (o clique "contou"), não move o mouse e **espera o clique terminar** (veja a explicação acima).
 - **SetValue (Value)**: dispara o evento de "texto mudou" do programa — não é só pintar texto na tela. Acentos funcionam.
 - **Campo de senha**: o robô **não consegue ler** o valor (volta vazio), mas consegue **escrever** nele.
 - **Toggle em caixa de 3 estados**: o ciclo é *ligado → indefinido → desligado → ligado*.
 - **Barra de progresso**: dá para ler (valor, mínimo, máximo), mas tentar escrever dá erro (é somente leitura).
-- **Seleção**: `Select()` troca a seleção; `AddToSelection()` acrescenta outro item; `RemoveFromSelection()` tira.
+- **Seleção**: `Select()` troca a seleção; `AddToSelection()` acrescenta outro item; `RemoveFromSelection()` tira. Em listas antigas do Windows, **confira item por item com `IsSelected`**: o `GetSelection()` da lista pode devolver um item antigo, e `CanSelectMultiple` pode dizer `False` mesmo aceitando vários.
+- **Texto rico (WPF)**: dá para procurar uma palavra, selecioná-la, expandir até a palavra/parágrafo e ler a formatação (negrito = 700, normal = 400).
+- **Listas gigantes (WPF, 500 itens)**: `ItemContainerPattern.FindItemByProperty` acha um item que nem está na tela e `VirtualizedItemPattern.Realize()` o materializa.
+- **Tabelas (WPF)**: `GridPattern` (3×3), `GetItem(linha, coluna)`, cabeçalhos de coluna e a célula certa ("18,90") foram conferidos.
+- **Janela**: `WaitForInputIdle` **não funcionou** (erro "não implementado") nas janelas testadas.
 - **Janela**: `Close()` fecha a janela como se você clicasse no X.
 
 ---
@@ -569,7 +627,9 @@ A Microsoft define regras: por exemplo, um `CheckBox` **deve** ter Toggle; um `W
 
 ## 10. 🍳 Receitas prontas (copiar e usar)
 
-> ✅ = executado e conferido no laboratório · 📖 = montado a partir do código-fonte, revise antes de usar em produção.
+> 📘 Quer ir além? O **[Guia prático](docs/13-guia-pratico.md)** ensina a achar elementos pelo **pai, filho e irmão**, a **iterar** listas, árvores e tabelas, a escolher entre clique e `Invoke`, e traz uma **caixa de ferramentas** (`descrever`, `caminho`, `gerar_codigo`, `inspecionar_cursor`) para descobrir o que usar sem ferramenta externa.
+
+> ✅ = executado e conferido (veja a seção 22) · 📖 = só lido no código, revise antes de usar em produção.
 
 ### 10.1 Esqueleto de qualquer script ✅
 
@@ -593,7 +653,7 @@ janela.ButtonControl(AutomationId="btnClick").GetInvokePattern().Invoke(waitTime
 Se não tiver `Invoke`, tente na ordem:
 
 ```python
-botao.GetLegacyIAccessiblePattern().DoDefaultAction()   # 📖
+botao.GetLegacyIAccessiblePattern().DoDefaultAction()   # ✅
 botao.Click()                                           # último recurso (usa o mouse)
 ```
 
@@ -630,7 +690,7 @@ print([f.Name for f in galho.GetChildren()])    # ['Filho A1', 'Filho A2']
 galho.GetExpandCollapsePattern().Collapse()
 ```
 
-### 10.7 Ler uma tabela 📖
+### 10.7 Ler uma tabela ✅
 
 Estrutura observada no laboratório: `Table → Custom (cada linha) → DataItem (cada célula)`.
 
@@ -640,14 +700,15 @@ linhas = []
 for linha in grade.GetChildren():
     celulas = [c for c in linha.GetChildren()
                if c.ControlType == auto.ControlType.DataItemControl]
-    linhas.append([
-        (c.GetValuePattern().Value if c.GetValuePattern() else c.Name)
-        for c in celulas
-    ])
-print(linhas)
+    if celulas:                      # a 1ª "linha" é o cabeçalho (sem células de dados)
+        linhas.append([
+            (c.GetValuePattern().Value if c.GetValuePattern() else c.Name)
+            for c in celulas
+        ])
+print(linhas)        # [['Caneta', '100', '2,50'], ['Caderno', '40', '18,90'], ['Mochila', '8', '149,00']]
 ```
 
-### 10.8 Esperar um diálogo aparecer e confirmar 📖
+### 10.8 Esperar um diálogo aparecer e confirmar ✅
 
 ```python
 dialogo = auto.WindowControl(searchDepth=1, RegexName=r".*Confirma.*")
@@ -655,16 +716,16 @@ if dialogo.Exists(8):
     dialogo.ButtonControl(Name="Sim").GetInvokePattern().Invoke()
 ```
 
-### 10.9 Fechar, minimizar, maximizar ✅/📖
+### 10.9 Fechar, minimizar, maximizar ✅
 
 ```python
 janela.GetWindowPattern().Close()                                    # ✅ fecha
-janela.Minimize(); janela.Maximize(); janela.Restore()               # 📖
-janela.SetTopmost(True)                                              # 📖 sempre no topo
-janela.GetWindowPattern().SetWindowVisualState(auto.WindowVisualState.Minimized)  # 📖
+janela.Minimize(); janela.Maximize(); janela.Restore()               # ✅
+janela.SetTopmost(True)                                              # ✅ sempre no topo
+janela.GetWindowPattern().SetWindowVisualState(auto.WindowVisualState.Minimized)  # ✅
 ```
 
-### 10.10 Descobrir o que está sob o mouse 📖
+### 10.10 Descobrir o que está sob o mouse ✅
 
 ```python
 c = auto.ControlFromCursor()
@@ -673,7 +734,7 @@ print(c.GetTopLevelControl())         # a janela dele
 auto.EnumAndLogControlAncestors(c)    # a "linhagem" completa, do Desktop até ele
 ```
 
-### 10.11 Rodar o robô em outra thread 📖
+### 10.11 Rodar o robô em outra thread ✅
 
 ```python
 import threading, uiautomation as auto
@@ -686,7 +747,7 @@ def trabalho():
 threading.Thread(target=trabalho).start()
 ```
 
-### 10.12 Botão de emergência (parar com um atalho) 📖
+### 10.12 Botão de emergência (parar com um atalho) ✅ (testado com teclas reais num processo filho)
 
 ```python
 def tarefa(parar):
@@ -737,8 +798,8 @@ auto.SendKeys("Olá, mundo!{Enter}")
 auto.SendKeys("{Ctrl}a{Delete}")          # Ctrl+A, depois Delete
 auto.SendKeys("{Ctrl}{Shift}s")           # Ctrl+Shift+S
 auto.SendKeys("{Tab 3}{Enter}")           # 3 Tabs e Enter
-auto.SendKeys("{Alt}{F4}")                # Alt+F4
-auto.SendKeys("{Win}d")                   # Windows+D (mostrar desktop)
+auto.SendKeys("{LAlt}{F4}")               # Alt+F4 (use {LAlt}: {Alt} vira Alt Gr = Ctrl+Alt em teclado pt-BR!)
+# auto.SendKeys("{Win}d")                 # Windows+D (minimiza TUDO; não executei nos testes)
 ```
 
 #### Folha de cola do `SendKeys`
@@ -747,21 +808,25 @@ auto.SendKeys("{Win}d")                   # Windows+D (mostrar desktop)
 |---|---|
 | Uma tecla especial | `{Enter}`, `{Tab}`, `{Esc}`, `{Space}`, `{Delete}`, `{Back}` (backspace), `{Home}`, `{End}`, `{PageUp}`, `{PageDown}`, `{Left}`, `{Right}`, `{Up}`, `{Down}`, `{F1}`…`{F24}` |
 | Repetir | `{Tab 5}` (5 vezes) |
-| Atalho com Ctrl / Shift / Alt / Win | `{Ctrl}c`, `{Shift}{Tab}`, `{Alt}{F4}`, `{Win}e` |
+| Atalho com Ctrl / Shift / Alt / Win | `{Ctrl}c`, `{Shift}{Tab}`, `{LAlt}{F4}` (**`{LAlt}`**, não `{Alt}`), `{Win}e` |
 | Vários modificadores | `{Ctrl}{Shift}s` |
-| Segurar durante um grupo de teclas | `{Ctrl}(ab)` (Ctrl enquanto aperta A e B) |
+| Segurar durante um grupo de teclas | `{Ctrl}(ab)` (Ctrl segurado e A e B apertadas **juntas**) · `{Shift}(abc)` digita `ABC` |
 | Digitar `{` ou `}` | `{{}` e `{}}` |
 | Digitar `(` ou `)` soltos | `(` e `)` (fora de grupos já são normais) ou `{(}` `{)}` |
 
 **Pegadinhas do `SendKeys`:**
 
-- O nome da tecla Backspace é **`{Back}`** (não existe `{Backspace}`) e o de Caps Lock é **`{Capital}`** (não existe `{CapsLock}`).
-- `SendKeys("")` (texto vazio) **dá erro** — proteja com `if texto:`.
+- O nome da tecla Backspace é **`{Back}`** e o de Caps Lock é **`{Capital}`**. Um nome que não existe (`{Backspace}`, `{CapsLock}`, `{Foo}`) **dá `TypeError`** — não vira texto. (Um nome de **uma letra**, como `{x}`, digita a letra.)
+- **`{Alt}` vira "Alt Gr"** (Ctrl+Alt) em teclados com Alt Gr, como o pt‑BR. Para o Alt de verdade use **`{LAlt}`**.
+- `{RControl}` **não segura** a tecla (o Ctrl solta antes). Use `{Ctrl}`.
+- **Emoji sai errado**: caracteres acima de U+FFFF são corrompidos (`😀` virou um caractere de uso privado, U+F600). Não envie emoji por `SendKeys`.
+- `SendKeys("")` (texto vazio) **dá erro** (`IndexError`) — proteja com `if texto:`. `{` sem fechar, `{}` e `{a b}` dão `ValueError`.
+- Símbolos como `!` logo depois de um modificador (`{Ctrl}!`) são digitados **depois** que o modificador é solto.
 - `{Ctrl}A` (A maiúsculo) é Ctrl+A **sem Shift**. Para Ctrl+Shift+A: `{Ctrl}{Shift}a`.
 - Letras e símbolos soltos são digitados como "caracteres Unicode" (funciona em qualquer layout de teclado, mas alguns programas e jogos só reagem a teclas "físicas").
 - `SendKeys` digita **onde estiver o foco**. Se o foco mudar no meio, o texto vai parar em outro programa.
 
-### Antes de digitar, confirme o foco 📖
+### Antes de digitar, confirme o foco ✅
 
 ```python
 if auto.GetForegroundWindow() != janela.NativeWindowHandle:
@@ -775,7 +840,7 @@ assert auto.GetForegroundWindow() == janela.NativeWindowHandle   # aborta se nã
 
 ## 12. 🪟 Janelas, tela, clipboard e processos
 
-### Janelas (por controle) 📖
+### Janelas (por controle) ✅
 
 ```python
 janela.SetActive()       # traz para frente
@@ -784,6 +849,8 @@ janela.MoveToCenter()    # centraliza no monitor principal
 janela.SetTopmost(True)  # fica sempre por cima
 janela.MoveWindow(x, y, largura, altura)
 ```
+
+> ⚠️ O `True/False` que `Maximize()`, `Minimize()`, `Restore()`, `Show()` e `Hide()` devolvem **não significa "deu certo"**: significa "a janela **estava visível** antes". Confira o resultado com `IsMaximize()`, `IsMinimize()` ou `auto.IsWindowVisible(handle)`.
 
 ### Tela e monitores ✅
 
@@ -798,25 +865,27 @@ Se você usa vários monitores, atenção: `MoveToCenter` e `GetScreenSize` olha
 ### Área de transferência (clipboard)
 
 ```python
-auto.SetClipboardText("texto")          # 📖 copia texto (SOBRESCREVE o que o usuário tinha!)
-print(auto.GetClipboardText())          # 📖
+auto.SetClipboardText("texto")          # ✅ copia texto (SOBRESCREVE o que o usuário tinha!)
+print(auto.GetClipboardText())          # ✅
 print(auto.GetClipboardFormats())       # ✅ lista os formatos que estão lá agora
-auto.SetClipboardHtml("<b>negrito</b>") # 📖
+auto.SetClipboardHtml("<b>negrito</b>") # ✅ (ver aviso abaixo)
 ```
 
 > ⚠️ Mexer no clipboard apaga o que o usuário tinha copiado. Se isso importa, **leia e guarde antes, e restaure depois**.
-> ⚠️ Há um bug conhecido: ler texto quando o clipboard só tem imagem deixa o clipboard "preso" pelo seu programa. Confira antes com `GetClipboardFormats()`. Detalhes na seção de armadilhas.
+> ⚠️ **Bug confirmado:** ler texto (ou HTML, ou imagem) quando o clipboard **não tem aquele formato** deixa o clipboard **"preso"** pelo seu programa: outros aplicativos ficam sem conseguir copiar/colar até o seu Python terminar. Confira antes com `GetClipboardFormats()`.
+> ⚠️ **Emoji no clipboard:** `SetClipboardText("ok 😀 fim")` guarda `"ok 😀 fi"` (perde o final).
+> ⚠️ **HTML:** `SetClipboardHtml` não termina o bloco com `NUL`; `GetClipboardHtml` às vezes lê lixo e dá `UnicodeDecodeError` (47 de 60 repetições em memória "suja").
 
-### Processos (programas em execução) ✅/📖
+### Processos (programas em execução) ✅
 
 ```python
 for p in auto.GetProcesses():                  # ✅ lista processos
     print(p.pid, p.exeName)                    # p.exePath e p.cmdLine podem vir vazios sem admin
 
-auto.TerminateProcessByName("notepad.exe")     # 📖 ENCERRA à força. Cuidado!
+auto.TerminateProcessByName("notepad.exe")     # ✅ ENCERRA à força (nome exato, sensível a maiúsculas). Cuidado!
 ```
 
-### Quem sou eu? 📖
+### Quem sou eu? ✅
 
 ```python
 auto.IsUserAnAdmin()        # estou rodando como administrador?
@@ -840,17 +909,21 @@ with janela.ToBitmap(0, 0, 200, 100) as img:           # um recorte de 200x100 d
 O print é uma **cópia dos pixels visíveis na tela**. Isso significa que:
 
 - se outra janela estiver **por cima**, o print mostra a outra janela;
-- se a janela estiver **minimizada** ou fora da tela, o resultado é inútil.
+- se a janela estiver **minimizada** ou fora da tela, o resultado é inútil (nos testes saiu **preto**).
+
+Tudo isso foi confirmado: com uma janela por cima do alvo, o print veio com as cores da janela de cima.
 
 Para tirar print de uma janela, traga-a para frente antes (`SetActive()`).
 
-### Outras coisas que a classe `Bitmap` faz 📖
+### Outras coisas que a classe `Bitmap` faz ✅
 
 - Abrir arquivos (`Bitmap.FromFile`), converter para **PIL** (`ToPILImage`) e **numpy/OpenCV** (`ToNDArray`).
 - Ler e escrever pixels (`GetPixelColor`, `SetPixelColor`, `GetPixelColorsOfRect`…).
 - Cortar (`Copy`), colar uma imagem em outra (`Paste`), redimensionar (`Resize`), girar (`Rotate`, `RotateFlip`).
 - Criar GIFs animados (`GIF.ToGifFile`) e TIFFs de várias páginas.
 - **Fechar** o bitmap (`Close()` ou `with`) libera a memória nativa; esqueça disso e a memória vaza.
+- ⚠️ **`Clone()` e `RotateWithSameSize()` QUEBRAM** (`OSError: access violation`, 5 de 5 tentativas) por um bug da biblioteca. Use `Copy()` no lugar de `Clone()`.
+- `ToFile("arquivo.xyz")` com extensão desconhecida grava **PNG** (com o nome que você deu). `GIF.ToGifFile` exige a lista de atrasos em milissegundos.
 
 Cores: as funções de `Bitmap` usam **ARGB** (`0xAARRGGBB`); a função `GetPixelColor` do Windows (a global e a do `Control`) devolve **BGR**. Não misture.
 
@@ -927,14 +1000,14 @@ if botao_ok.Exists(10):          # continua assim que aparecer
 
 ## 16. ⚠️ Armadilhas e bugs que ninguém te conta
 
-Aqui está a parte que mais vale o tempo de leitura. São coisas que encontrei **lendo o código** (📖) ou **testando** (🧪).
+Aqui está a parte que mais vale o tempo de leitura. São coisas que encontrei **lendo o código** (📖) e depois **reproduzi em testes** (🧪). Quase tudo abaixo já tem o selo 🧪.
 
 ### 16.1 Comportamentos que surpreendem
 
 | # | Surpresa | Como se proteger |
 |---|---|---|
 | 1 | **A biblioteca grava um arquivo `@AutomationLog.txt`** na pasta atual, com logs que podem incluir textos das telas. 🧪 | `auto.Logger.SetLogFile("")` |
-| 2 | **Importar a biblioteca muda configurações do processo** (consciência de DPI e algumas funções do Windows). 📖 | Saiba disso se misturar com outras bibliotecas gráficas |
+| 2 | **Importar a biblioteca muda configurações do processo** (consciência de DPI por monitor e o tipo de retorno de funções do Windows). 🧪 | Saiba disso se misturar com outras bibliotecas gráficas |
 | 3 | **Acessar um controle que não existe trava até 10 s** e dá erro. 🧪 | `Exists(0, 0)` para testar sem esperar |
 | 4 | **`RegexName` compara desde o início** da frase. 🧪 | Use `.*trecho.*` para "contém" |
 | 5 | **Parâmetro de busca inventado é ignorado em silêncio** (`Foo="bar"` não filtra nada). 🧪 | Use só os critérios da tabela da seção 6 |
@@ -943,20 +1016,39 @@ Aqui está a parte que mais vale o tempo de leitura. São coisas que encontrei *
 | 8 | **Elementos fora da tela podem ter tamanho zero** e o clique é ignorado. 🧪 | `ScrollIntoView()` antes |
 | 9 | **A lista "multisseleção" pode mentir**: `CanSelectMultiple` voltou `False` mas aceitava vários. 🧪 | Teste de verdade |
 | 10 | **Campos de senha não podem ser lidos**, só escritos. 🧪 | É proposital |
-| 11 | **`GetWindowText` corta em 260 caracteres.** 📖 | Use `GetEditText(handle)` ou `ValuePattern` |
+| 11 | **`GetWindowText` corta em 259 caracteres** (o `Name` trouxe 300). 🧪 | Use `GetEditText(handle)` ou `ValuePattern` |
 | 12 | **Os cliques e teclas vão para o que estiver em foco.** | Confirme o foco antes |
-| 13 | **O print captura o que está visível na tela.** 📖 | Traga a janela para frente |
+| 13 | **O print captura o que está visível na tela** (janela por cima aparece; minimizada sai preta). 🧪 | Traga a janela para frente |
 | 14 | **`EnumProcessByWMI` exige instalar `wmi`.** 🧪 | `pip install wmi` |
-| 15 | **A árvore percorrida é a "Raw View"** (mostra mais elementos que a ferramenta Inspect "Control View"). 📖 | Use a própria biblioteca para olhar a árvore |
+| 15 | **A árvore percorrida é a "Raw View"** (mostra mais elementos que a ferramenta Inspect "Control View"). 🧪 | Use a própria biblioteca para olhar a árvore |
+| 16 | **`Invoke` espera o clique terminar** e fica preso em botões que abrem diálogo modal (e trava outras consultas ao mesmo programa por ~66 s). 🧪 | Rode numa thread ou use `Click()` (seção 7) |
+| 17 | **`{Alt}` do `SendKeys` vira Alt Gr** (Ctrl+Alt) em teclado pt-BR. 🧪 | Use `{LAlt}` |
+| 18 | **`Maximize()`, `Show()`, `Hide()`… devolvem "estava visível antes", não "sucesso".** 🧪 | Confira com `IsMaximize()`/`IsWindowVisible()` |
+| 19 | **Reusar um controle de janela que já fechou dá `COMError`** em vez de `False`. 🧪 | `try/except comtypes.COMError` |
+| 20 | **`GetSelection()` de listas antigas pode devolver item antigo.** 🧪 | Confira com `IsSelected` de cada item |
+| 21 | **Os `GetXxxPattern()` só existem nas classes tipadas**; em células de grade do WPF ou `DatePicker` use `GetPattern(auto.PatternId.XxxPattern)`. 🧪 | |
+| 22 | **Ler dados do clipboard sem o formato presente trava o clipboard** para outros apps. 🧪 | Confira `GetClipboardFormats()` antes |
 
 ### 16.2 Bugs reais no código da biblioteca (versão 2.0.29)
 
-Encontrados lendo o código-fonte. Útil se você algum dia ver um erro estranho:
+Encontrados lendo o código e **reproduzidos em testes**. Útil se você algum dia ver um erro estranho:
 
 | Onde | O que acontece |
 |---|---|
+| `Bitmap.Clone()` e `Bitmap.RotateWithSameSize()` | **Quebram** com `access violation` (ponteiro de 64 bits truncado); 5 de 5 vezes |
+| `SetClipboardText` com emoji | O texto volta **sem o final** (`'ok 😀 fim'` → `'ok 😀 fi'`) |
+| `SetClipboardHtml` / `GetClipboardHtml` | Bloco sem `NUL` final e memória não zerada: leitura com lixo ou `UnicodeDecodeError` (47 de 60 vezes em memória "suja") |
+| `SendKeys` com emoji (acima de U+FFFF) | O caractere sai corrompido |
+| `SendKeys("{Backspace}")`, `{Foo}`… | `TypeError` (nome inexistente com mais de 1 letra) |
+| `SendKeys("{Alt}...")` | Vira Alt Gr (Ctrl+Alt) em layouts com Alt Gr |
+| `SendUnicodeChar`, `SendInput` | Devolvem `1` mesmo enviando 2 eventos |
+| `ItemContainerPattern.FindItemByProperty(None, …)` | `AttributeError`: precisa de um `Control` |
+| `SynchronizedInputPattern.StartListening()` | `TypeError`: falta o argumento `inputType` |
+| `Control.GetPatternAs` | Devolve um `int` inutilizável |
+| `ShowWindow` e derivados | O retorno é "estava visível", não "sucesso" |
+| `Exists()` com elemento morto | Levanta `COMError` em vez de `False` |
 | `TextPattern.RangeFromChild` | Passa o objeto errado (a classe em vez do elemento); não funciona |
-| `TextRange.CompareEndpoints` | Passa o objeto errado; dá erro |
+| `TextRange.CompareEndpoints` | Passa o objeto errado; dá erro (`ArgumentError`) |
 | `TableControl.GetTableItemsValue` | Usa `> 0` onde devia ser `>= 0`: a **linha 0 e a coluna 0 nunca são selecionáveis** |
 | `GetClipboardText/Html/Bitmap` | Não fecham o clipboard quando o formato pedido não existe → clipboard preso |
 | `Control.DoubleClick` | Quebra (`TypeError`) se o controle tem tamanho zero |
@@ -1102,14 +1194,16 @@ UiAutomation-Doc/
     ├── 01-arquitetura.md               como a biblioteca é montada
     ├── 02-constantes-e-enums.md        todas as constantes
     ├── 03-control.md                   a classe Control em detalhe
-    ├── 04-controles-especificos.md     os 40 tipos e a matriz de habilidades
+    ├── 04-controles-especificos.md     os 41 tipos e a matriz de habilidades
     ├── 05-patterns.md                  os 34 patterns
     ├── 06-funcoes-win32.md             mouse, teclado, janelas, processos, hotkeys
     ├── 07-bitmap-clipboard-logger.md   imagens, clipboard, logs
     ├── 08-bugs-e-pegadinhas.md         bugs e comportamentos surpreendentes
     ├── 09-dicas-e-receitas.md          receitas e depuração
     ├── 10-referencia-api-completa.md   TODAS as funções, classes e métodos
-    └── 11-internos-algoritmos.md       como tudo funciona por dentro
+    ├── 11-internos-algoritmos.md       como tudo funciona por dentro
+    ├── 12-relatorio-de-validacao.md    773 verificações: o que foi testado e o que mudou
+    └── 13-guia-pratico.md              como fazer cada coisa: clique x Invoke, pai/filho/irmão, iterar
 ```
 
 Quer se aprofundar? Comece por [`docs/README.md`](docs/README.md). Leitura sugerida: **01 → 03 → 05 → 08 → 09**. Os demais servem de consulta.
@@ -1124,24 +1218,30 @@ Transparência é importante, ainda mais num material público.
 
 1. **Instalação** da biblioteca (versão 2.0.29) em um ambiente virtual.
 2. **Inventário automático**: um script percorreu o código e listou 140 classes, 549 métodos/propriedades e 117 funções.
-3. **Leitura integral do código-fonte** (um único arquivo de ~10.800 linhas), seção por seção: constantes, funções do Windows, mouse, teclado, janelas, processos, clipboard, `Bitmap`, os 34 patterns, a classe `Control` e todos os 40 tipos de controle.
-4. **Laboratório próprio** (`UIA-LAB`, o código está na seção 4): uma janela com um exemplar de cada controle para testar os patterns, a busca e a navegação sem tocar em programas reais.
-5. **Segunda passada de leitura**, mais profunda, só no código, sobre os pontos que não foram testados.
+3. **Leitura integral do código-fonte** (um único arquivo de ~10.800 linhas), seção por seção: constantes, funções do Windows, mouse, teclado, janelas, processos, clipboard, `Bitmap`, os 34 patterns, a classe `Control` e todos os 41 tipos de controle.
+4. **Segunda passada de leitura**, mais profunda, sobre os algoritmos internos.
+5. **Validação por execução (773 verificações).** Cada afirmação importante da documentação foi executada e comparada com o resultado real, em:
+   - o laboratório **WinForms** `UIA-LAB` (o código está na seção 4), com registro de eventos de mouse e teclado;
+   - um laboratório **WPF** próprio (texto rico, tabela, lista virtualizada de 500 itens, calendário…);
+   - janelas descartáveis e processos filhos com nome único para testar fechar, esconder e encerrar;
+   - Paint e Calculadora, abertos só para procurar patterns raros.
+
+   Mouse e teclado só agiram nas janelas de laboratório, com checagem de primeiro plano antes de cada envio.
+6. **Correção da documentação** com tudo o que a execução desmentiu (veja o relatório em [`docs/12-relatorio-de-validacao.md`](docs/12-relatorio-de-validacao.md)).
 
 ### As etiquetas que você viu pelo texto
 
 | Selo | Significa |
 |---|---|
-| ✅ / 🧪 | **Executado e conferido** no laboratório |
-| 📖 | **Deduzido lendo o código-fonte** (não executado) |
+| ✅ / 🧪 | **Executado e conferido** |
+| 📖 | **Deduzido lendo o código-fonte** (não executado) — hoje restam poucos, listados abaixo |
 
-### O que NÃO foi testado
+### O que ainda NÃO foi testado
 
-- Cliques e digitação **reais** de mouse/teclado (propositalmente, para não interferir no computador em uso). O funcionamento deles está descrito pelo código-fonte.
-- Programas além do laboratório (Office, navegadores, jogos, Electron, Java…). Qualquer afirmação sobre eles é **regra geral**, e está marcada como tal.
-- Captura de imagem, clipboard e `Bitmap` (descritos pela leitura do código).
-- Comportamento com privilégios de administrador.
-- Outras versões da biblioteca ou do Windows além de Windows 11 / Python 3.12.
+- **Patterns que só existem em Office e programas parecidos**: `Annotation`, `CustomNavigation`, `Dock`, `ObjectModel`, `Spreadsheet`, `SpreadsheetItem`, `Styles`, `TextChild`, `TransformPattern2`. Nenhum dos programas disponíveis os expôs.
+- `ShowDesktop()` (minimizaria todas as janelas), `RunScriptAsAdmin` (abre o UAC), `SetScreenSize` com outra resolução, `PlayWaveFile` tocando som, `SendKeys` com `{Win}`.
+- Programas **elevados (administrador)**, Electron/Chromium, Java, Qt, jogos, sessão remota. Qualquer afirmação sobre eles é **regra geral**, e está marcada como tal.
+- Outras versões da biblioteca ou do Windows além de Windows 11 / Python 3.12 / teclado pt‑BR.
 
 ### Uma nota sobre um erro que cometi
 

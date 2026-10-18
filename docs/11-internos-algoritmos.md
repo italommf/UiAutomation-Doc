@@ -4,7 +4,7 @@ Tudo abaixo foi **deduzido lendo o código** (nada executado). Números de linha
 
 ## 11.1 Busca: `Exists` → `FindControl` → `WalkControl`
 `Control.Exists` (L7098):
-1. **Controle de elemento direto** (`_elementDirectAssign`, criado por `GetChildren`, `ControlFromPoint`…): não busca. Pega a raiz com `IUIAutomation.GetRootElement()`; se `CompareElements(self._element, raiz)` → `True`; senão `True` se `ViewWalker.GetParentElement(elemento)` existir. Não há `try/except`: um elemento já morto pode levantar `COMError` em vez de devolver `False`.
+1. **Controle de elemento direto** (`_elementDirectAssign`, criado por `GetChildren`, `ControlFromPoint`…): não busca. Pega a raiz com `IUIAutomation.GetRootElement()`; se `CompareElements(self._element, raiz)` → `True`; senão `True` se `ViewWalker.GetParentElement(elemento)` existir. Não há `try/except`: um elemento já morto pode levantar `COMError` em vez de devolver `False`. 🧪 Confirmado: num elemento de uma janela que já foi fechada, `Exists()` e `.Name` levantaram `COMError 0x80040201` (elemento não disponível); buscar a partir de uma janela morta também levanta em vez de devolver `False`.
 2. Sem critérios → `LookupError`.
 3. Zera `_element`; se `searchFromControl` existe e **ainda não foi resolvido**, chama `prev.Exists(...)` com os **mesmos** `maxSearchSeconds/interval` — ou seja, uma cadeia `a.b.c` resolve pai antes do filho, e o orçamento de tempo é aplicado a cada nível (o tempo total pode passar do que você pediu).
 4. Laço: `FindControl(searchFromControl, _CompareFunction, searchDepth, findFromSelf=False, foundIndex)`. Achou → guarda `control.Element` em `self._element` e zera `_element` do temporário. Não achou → dorme `min(restante, intervalo)`; se acabou o tempo, devolve `False`. A varredura roda **antes** de checar o prazo, então o tempo real = prazo + até uma varredura.
@@ -46,7 +46,7 @@ Fase (a), por token:
 |---|---|---|
 | `{nome [n]}` com nome em `SpecialKeyNames` (case-insensitive) | acrescenta `[down, up]`; se `nome` ∈ `holdKeys` ⇒ `hold=True` e `insertIndex` = posição do `up` do modificador | **insere** `down,up` em `insertIndex` (ou seja, *entre* o down e o up do modificador); depois: se `include` ⇒ `insertIndex++`; senão se for outro modificador ⇒ `insertIndex++` (empilha `{Ctrl}{Shift}`), senão `hold=False` |
 | `{x}` com `x` em `CharacterCodes` (**case‑sensitive**) | (cai no ramo "caractere unicode") — acrescenta `x` como Unicode | insere VK down/up em `insertIndex` |
-| `{qualquer-outro}` | acrescenta como Unicode | acrescenta como Unicode **no fim** (depois de soltar o modificador) |
+| `{nome}` não existente (mais de 1 caractere) | `TypeError` em `ord()` 🧪 (um nome de **1** caractere, como `{x}`, é digitado) | idem |
 | `(` | literal | `include=True` |
 | `)` | literal | `include=False; hold=False` |
 | caractere normal | Unicode | se em `CharacterCodes` → VK inserido; senão Unicode no fim; depois `include` ? `insertIndex++` : `hold=False` |
@@ -57,7 +57,7 @@ Resultado prático:
 - `{Ctrl}a` → `Ctrl↓ A↓ A↑ Ctrl↑` (o "a" entra entre down e up do Ctrl).
 - `{Ctrl}A` (maiúsculo) → também `VK_A` **sem Shift** (porque `CharacterCodes['A'] = VK_A`): é Ctrl+A, não Ctrl+Shift+A. Para Shift use `{Ctrl}{Shift}a`.
 - `{Ctrl}!` → `!` não está em `CharacterCodes` ⇒ vira Unicode digitado **depois** do Ctrl soltar.
-- `{Ctrl}(ab)` → Ctrl segurado durante `a` e `b`.
+- `{Ctrl}(ab)` → Ctrl segurado e A e B pressionadas **juntas** (Ctrl↓ A↓ B↓ B↑ A↑ Ctrl↑) 🧪, não A inteiro e depois B.
 - `{Ctrl}{a 3}`: 1ª repetição é combinada com Ctrl; `hold` vira `False`; as 2 seguintes são Unicode normais → "Ctrl+A, depois 'aa'" (bate com o docstring).
 - Maiúsculas/símbolos fora de hold sempre via Unicode (`KEYEVENTF_UNICODE`), por isso independem de layout — mas muitos apps que escutam teclas VK (jogos, atalhos) não veem Unicode como tecla.
 
@@ -88,7 +88,7 @@ Nomes aceitos em `{...}` além dos óbvios (lidos de `SpecialKeyNames`): `ENTER/
 4. `NtQueryInformationProcess(classe 0)` ⇒ `PROCESS_BASIC_INFORMATION` (6 palavras): `[1]` = endereço do PEB, `[5]` = pid do pai.
 5. Lê o PEB (712 bytes em 64‑bit / 472 em 32‑bit), `peb[4]` = `ProcessParameters`; lê `RTL_USER_PROCESS_PARAMETERS` (128/72 bytes) e, no deslocamento `16 + 10*ptrSize`, desempacota os dois `UNICODE_STRING` (`ImagePathName`, `CommandLine`) com `struct '@HHNHHN'`.
 6. Lê os textos do espaço do processo alvo. Se `exePath` ficou vazio, cai para `QueryFullProcessImageNameW`.
-⚠ Observação: o buffer é `c_wchar * MaximumLength`, mas `MaximumLength` é em **bytes**; o código lê `sizeof(buffer)` = 2× esse valor. Se o intervalo extra não for legível no alvo, o `ReadProcessMemory` falha e `cmdLine` fica vazio (suspeita — não verifiquei). Só funciona entre processos de mesma "bitness" para ler a PEB (32↔64 pode falhar).
+🧪 A suspeita sobre o buffer de `cmdLine` (leitura com o dobro do tamanho) **não se confirmou**: para um processo filho a linha de comando veio completa e **0 de 140** processos acessíveis tinham `cmdLine` vazia. Só 140 de 271 processos expõem detalhes sem privilégio elevado.
 `TerminateProcess(pid)`: `OpenProcess(PROCESS_TERMINATE)` + `TerminateProcess(h, -1)` (código de saída `0xFFFFFFFF`).
 
 ## 11.7 `RunByHotKey` (L10657)
@@ -99,7 +99,7 @@ Nomes aceitos em `{...}` além dos óbvios (lidos de `SpecialKeyNames`): `ENTER/
 - Saída: `exitHotKey` (padrão Ctrl+D) ⇒ seta `stopEvent`, `join(2)` das vivas e `os._exit(0)`.
 
 ## 11.8 Threads/COM
-`_AutomationClient.instance()` é um **singleton do processo** criado na primeira thread que o usar. As demais threads precisam chamar `CoInitializeEx` (`UIAutomationInitializerInThread`), mas continuam compartilhando o mesmo objeto `IUIAutomation`/`ViewWalker` criado na outra thread — o docstring manda não passar `Control`/`Pattern` entre threads. O ponto sutil é que o próprio singleton é criado por quem usar primeiro e compartilhado; o código não trata isso. Não consegui concluir só pela leitura se isso é seguro em todos os casos (depende do modelo de apartamento do COM), então a recomendação prática é manter a automação numa única thread de trabalho e criar os controles dentro dela.
+`_AutomationClient.instance()` é um **singleton do processo** criado na primeira thread que o usar. 🧪 Nos testes, threads sem `UIAutomationInitializerInThread` e até um `Control` da thread principal lido em outra thread **funcionaram**; ainda assim o docstring da lib diz que não é suportado, então mantenha a automação numa única thread de trabalho e crie os controles nela.
 `UIAutomationInitializerInThread`: `__init__` inicializa; `Uninitialize` é idempotente (flag `inited`); `__del__` também chama — usar `with` evita chamar tarde demais.
 
 ## 11.9 `LogControl` (L10504)

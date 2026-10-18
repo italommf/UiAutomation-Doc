@@ -18,7 +18,7 @@ Control(searchFromControl=None, searchDepth=0xFFFFFFFF, searchInterval=SEARCH_IN
 | `ControlType` | Valor de `ControlType.XxxControl` (as subclasses já passam o seu). |
 | `Name` | Igualdade exata. |
 | `SubName` | `SubName in control.Name` (contém). |
-| `RegexName` | `re.match` (**ancorado no início**; para "contém" use `.*padrão`). Só um entre Name/SubName/RegexName. |
+| `RegexName` | `re.match` (**ancorado no início**; para "contém" use `.*padrão`). O docstring diz "só um entre Name/SubName/RegexName", mas a lib **não impede** combinar: valem todos, em AND 🧪. |
 | `ClassName` | Igualdade exata com a classe Win32/framework. |
 | `AutomationId` | Igualdade exata. |
 | `Depth` | Só aceita controles **exatamente** nessa profundidade relativa (e define `searchDepth` = Depth). |
@@ -63,7 +63,7 @@ Todas chamam `Element.CurrentXxx` ao vivo (sem cache).
 | `BoundingRectangle` | `Rect` | coordenadas de tela; (0,0,0,0) se invisível |
 | `NativeWindowHandle` | int | `0` se não tem HWND (ou erro COM) |
 | `ProcessId` | int | |
-| `FrameworkId` | str | `'Win32'`, `'WPF'`, `'XAML'`, `'Chrome'`… |
+| `FrameworkId` | str | `'Win32'` (Bloco de Notas), `'WinForm'` (apps WinForms 🧪), `'WPF'`, `'XAML'`, `'Chrome'`… |
 | `IsEnabled`, `IsOffscreen`, `IsKeyboardFocusable`, `HasKeyboardFocus` | bool | |
 | `IsContentElement`, `IsControlElement` | bool | |
 | `IsPassword` | bool | campo de senha |
@@ -82,7 +82,7 @@ Não expostas (comentadas no código): `ControllerFor`, `DescribedBy`, `FlowsTo`
 |---|---|
 | `GetPropertyValue(propertyId)` | `Element.GetCurrentPropertyValue`. Retorna tipo conforme a propriedade (muitas devolvem ponteiros COM vazios/`IUnknown`). |
 | `GetPropertyValueEx(propertyId, ignoreDefault)` | idem, com opção de ignorar o default |
-| `GetClickablePoint()` | `(x, y, gotClickable)` — para janelas sem ponto clicável retorna `(0,0,False)` |
+| `GetClickablePoint()` | `(x, y, gotClickable)` 🧪 — numa janela visível devolveu um ponto válido `(x, y, True)`; numa janela coberta/sem ponto clicável pode vir `(0, 0, False)` |
 | `GetRuntimeId()` | tupla de ints (ex.: `(42, 330406)`); identifica o elemento enquanto vive |
 | `GetPattern(patternId)` | cria um **novo** pattern ou `None` (engole `COMError`) |
 | `GetPatternAs(patternId, riid)` | `GetCurrentPatternAs` (marcado "todo") |
@@ -131,7 +131,7 @@ Convenção de `x`, `y`: `>=0` offset a partir de left/top; **negativo** = offse
 ## 3.7 Janela nativa a partir do controle
 | Método | Descrição |
 |---|---|
-| `ShowWindow(cmdShow, waitTime)` | procura o HWND no controle **ou nos ancestrais**; retorna bool / `None` se não achar HWND |
+| `ShowWindow(cmdShow, waitTime)` | procura o HWND no controle **ou nos ancestrais**; `None` se não achar HWND. ⚠ O `bool` é o retorno do Win32: **`True` = a janela estava visível antes**, não "sucesso" 🧪 (`Show` depois de `Hide` devolve `False` mesmo tendo reaparecido) |
 | `Show()`, `Hide()` | `SW.Show` / `SW.Hide` |
 | `MoveWindow(x,y,w,h,repaint=True)` | só se o controle tem HWND próprio |
 | `GetWindowText()`, `SetWindowText(text)` | idem |
@@ -140,7 +140,7 @@ Convenção de `x`, `y`: `>=0` offset a partir de left/top; **negativo** = offse
 
 ## 3.8 Mixin `TopLevel` (em `WindowControl` e `PaneControl`)
 `SetTopmost(isTopmost=True)`, `IsTopmost()`, `SwitchToThisWindow()`, `Maximize()`, `IsMaximize()`, `Minimize()`, `IsMinimize()`, `Restore()`, `MoveToCenter()`, `SetActive()`.
-Todos checam `IsTopLevel()` primeiro e retornam `False` se o controle não for top-level. `SetActive` restaura se minimizada, mostra se oculta e chama `SetForegroundWindow` (**pode falhar** se o processo em primeiro plano não for o do Python — restrição do Windows). `MoveToCenter` usa `GetScreenSize()` (monitor primário).
+Todos checam `IsTopLevel()` primeiro e retornam `False` se o controle não for top-level. `SetActive` restaura se minimizada, mostra se oculta e chama `SetForegroundWindow` (**pode falhar** se o processo em primeiro plano não for o do Python — restrição do Windows). `MoveToCenter` usa `GetScreenSize()` (monitor primário). Os retornos de `Maximize/Minimize/Restore` seguem a regra do `ShowWindow` acima 🧪.
 `WindowControl.MetroClose()` só para janelas Metro do Windows 8.
 
 ## 3.9 Fábricas de filhos

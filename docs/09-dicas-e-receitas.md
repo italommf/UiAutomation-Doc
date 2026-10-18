@@ -1,6 +1,6 @@
 # 09 — Dicas, truques e receitas
 
-🧪 = a mesma chamada foi exercitada no laboratório; as demais são montadas a partir das assinaturas lidas no código (revise antes de usar em produção).
+🧪 = a mesma chamada foi **executada e conferida** (ver `12-relatorio-de-validacao.md`); sem o selo = montada a partir das assinaturas lidas no código — revise antes de usar em produção.
 
 ## 9.1 Esqueleto recomendado
 ```python
@@ -37,6 +37,8 @@ btn = win.ButtonControl(AutomationId='btnClick')
 btn.GetInvokePattern().Invoke(waitTime=0)
 ```
 Se não tiver `InvokePattern` tente `btn.GetLegacyIAccessiblePattern().DoDefaultAction()` e, por último, `btn.Click()`.
+
+> ⚠ 🧪 **`Invoke` é síncrono**: só volta quando o clique termina no app. Num botão que abre um **diálogo modal** ele fica preso até o diálogo fechar (e, sem ninguém fechar, estoura com `COMError 0x80131505` após ~66 s, travando outras chamadas UIA ao mesmo programa). Nesses casos rode o `Invoke` **numa thread** (com `UIAutomationInitializerInThread`) ou use `btn.Click()` (volta na hora). Detalhes em `05-patterns.md`.
 
 ### Preencher texto 🧪
 ```python
@@ -132,12 +134,12 @@ auto.RunByHotKey({(auto.ModifierKey.Control, auto.Keys.VK_1): tarefa},
 ### Atalhos e combinações com `SendKeys`
 ```python
 auto.SendKeys('{Ctrl}a{Delete}')            # selecionar tudo + apagar
-auto.SendKeys('{Alt}{F4}')                  # fechar
+auto.SendKeys('{LAlt}{F4}')                 # fechar (use {LAlt}: {Alt} vira Alt Gr = Ctrl+Alt em teclado pt-BR 🧪)
 auto.SendKeys('{Ctrl}{Shift}s')             # Ctrl+Shift+S
 auto.SendKeys('{Tab 3}{Enter}')             # 3 tabs + enter
 auto.SendKeys('linha1{Enter}linha2')
 ```
-Prefira `win.GetWindowPattern().Close()` a `{Alt}{F4}`.
+Prefira `win.GetWindowPattern().Close()` (🧪 fecha a janela como o X). **Cuidado:** `{Alt}` vira Alt Gr em layouts como pt‑BR (chega como Ctrl+Alt); use `{LAlt}`. `{Backspace}`/`{CapsLock}` não existem (`{Back}`, `{Capital}`) e dão `TypeError`.
 
 ### Fechar / minimizar janela sem mouse 🧪
 ```python

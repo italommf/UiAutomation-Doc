@@ -43,11 +43,11 @@ Subclasses por formato (devolvidas por `_FromGdiplusBitmap`): `MemoryBMP, BMP, J
 | `SetPixelColorsOfRect(...)`, `SetPixelColorsHorizontally/Vertically`, `SetAllPixelColors` | aceitam sequência; **passe um `ctypes.c_uint32 * n`** para ser rápido |
 | `Clear(color=0xFFFFFFFF, x, y, w, h)` | preenche (0 = até a borda) |
 | `Copy(x,y,w,h)` | novo `MemoryBMP` (um frame) |
-| `Clone()` | mantém formato e frames |
+| `Clone()` | ⚠ 🧪 **QUEBRA**: `OSError: access violation` em 100% das chamadas (a DLL devolve ponteiro de 64 bits e o `restype` não foi definido). Use `Copy()`. |
 | `Paste(x, y, bitmap)` / `PastePart(dstX,dstY,src,srcX,srcY,srcW,srcH)` | **modifica o original**; recorta o que sair dos limites |
 | `Resize(w,h)` | novo bitmap |
 | `Rotate(angle, backgroundColor=0xFFFFFFFF)` | horário, em torno do centro; tamanho do resultado pode mudar |
-| `RotateWithSameSize(dx, dy, angle, bg)` | gira em volta de (dx,dy) mantendo o tamanho |
+| `RotateWithSameSize(dx, dy, angle, bg)` | ⚠ 🧪 **QUEBRA** pelo mesmo motivo do `Clone` (`access violation`). Alternativa: `Rotate` + recorte com `Copy`/`Paste`. |
 | `RotateFlip(RotateFlipType)` | giros de 90° e espelhamentos |
 | `Close()` / `Release()` / `with Bitmap...` / `__del__` | **libera a memória nativa**; use `with` ou chame `Close()` |
 | `GetRawFormat()`, `GetRawFormatStr()` | |
@@ -58,14 +58,16 @@ Cores: `GetPixelColor(x,y)` do módulo/`Control` usa **BGR** (GDI); `Bitmap` usa
 Todas as funções usam um `threading.Lock` global e tentam abrir o clipboard por até 0,2 s.
 | Função | Descrição |
 |---|---|
-| `GetClipboardFormats()` | `{id: nome}` dos formatos presentes (testado: HTML Format, CF_UNICODETEXT, CF_TEXT… e formatos registrados por apps) |
+| `GetClipboardFormats()` | `{id: nome}` dos formatos presentes 🧪 (ex.: `{13: 'CF_UNICODETEXT', 16: 'CF_LOCALE', 1: 'CF_TEXT', 7: 'CF_OEMTEXT'}` após `SetClipboardText`; `SetClipboard*` apaga o resto, inclusive formatos de outros apps) |
 | `GetClipboardText()` / `SetClipboardText(text)` | `CF_UNICODETEXT`; `Get` devolve `''` se vazio/indisponível |
 | `GetClipboardHtml()` / `SetClipboardHtml(html)` | formato "HTML Format" (monta cabeçalho `StartHTML/EndHTML/StartFragment/EndFragment` em UTF‑8) |
 | `GetClipboardBitmap()` / `SetClipboardBitmap(bitmap)` | `CF_BITMAP` |
 | `ClipboardFormat` | constantes `CF_*` + `CF_HTML` (registrado em runtime) |
 
-⚠ **Vazamento de handle:** em `GetClipboardText`, `GetClipboardHtml` e `GetClipboardBitmap`, `CloseClipboard` só é chamado quando o formato existe. Se o clipboard não tiver aquele formato (ex.: só tem imagem e você chama `GetClipboardText()`), o `OpenClipboard` já foi feito e nunca é fechado: o processo continua dono do clipboard e outros apps não conseguem usá-lo até o Python terminar (deduzido do código; não reproduzi para não mexer no seu clipboard). Contorno: antes de ler, confira `ClipboardFormat.CF_UNICODETEXT in GetClipboardFormats()`, ou chame `ctypes.windll.user32.CloseClipboard()` depois.
+⚠ 🧪 **Vazamento confirmado:** em `GetClipboardText`, `GetClipboardHtml` e `GetClipboardBitmap`, `CloseClipboard` só é chamado quando o formato existe. Se o clipboard não tiver aquele formato (ex.: só tem imagem e você chama `GetClipboardText()`), ele já foi aberto e nunca é fechado: **programas normais** (que abrem o clipboard com um *handle* de janela) ficam **bloqueados** (erro 5) até o seu Python terminar ou você chamar `ctypes.windll.user32.CloseClipboard()`. Chamadas normais (o formato existe) **não vazam**. Observação: dois processos que abrem com `NULL` convivem sem conflito, por isso só se nota o problema em apps "de janela". **Contorno testado:** `if 'CF_UNICODETEXT' in GetClipboardFormats().values():` antes de ler.
 `SetClipboard*` sobrescreve o clipboard do usuário — **salve e restaure** se importar.
+
+🧪 Outros achados do clipboard: (1) **emoji trunca**: `SetClipboardText('ok 😀 fim')` → `'ok 😀 fi'` (o tamanho usa `len(text)` em code points; falta 1 unidade UTF‑16 por caractere fora do BMP); (2) **`SetClipboardHtml` não grava `NUL` final** e não zera a memória: com a memória reaproveitada, `GetClipboardHtml` deu `UnicodeDecodeError`/lixo em 47 de 60 repetições (sem acento e em condições calmas funciona; os deslocamentos `StartFragment/EndFragment` são exatos em bytes UTF‑8 mesmo com acentos); (3) com o clipboard preso por outro processo, `SetClipboardText` tenta ~0,2 s e devolve `False`, `GetClipboardText` devolve `''` em ~0,2 s; (4) textos de 150 mil caracteres ida e volta ok; `SendKeys('{Ctrl}a{Ctrl}c')` e `{Ctrl}v` interagem corretamente com o clipboard; (5) `GetClipboardBitmap` devolve `MemoryBMP` e preserva cor e tamanho.
 
 ## 7.4 `Logger`
 Saída colorida no console + arquivo (padrão `@AutomationLog.txt` no diretório atual, `a+`, UTF‑8).
@@ -74,14 +76,23 @@ Saída colorida no console + arquivo (padrão `@AutomationLog.txt` no diretório
 | `Write(log, consoleColor, writeToFile=True, printToStdout=True, logFile=None, printTruncateLen=0)` | texto cru (corta com `...` se `printTruncateLen>0`) |
 | `WriteLine` | com `\n` |
 | `Log(log, ...)` / `LogColorfully`=`ColorfullyLog` | prefixa data/hora, **arquivo[linha] função ->** (descobre o chamador fora de `uiautomation.py` via `sys._getframe`) |
-| `ColorfullyWrite(log, ...)` / `WriteColorfully`, `ColorfullyWriteLine` / `WriteLineColorfully` | aceita marcas `'Texto <Color=Green>verde</Color>'`; nomes em `Logger.ColorNames` (Black, DarkBlue…, White); **não aninha** |
+| `ColorfullyWrite(log, ...)` / `WriteColorfully`, `ColorfullyWriteLine` / `WriteLineColorfully` | aceita marcas `'Texto <Color=Green>verde</Color>'`; nomes em `Logger.ColorNames` (Black, DarkBlue…, White); **não aninha** | 🧪 Cor inexistente ou sem `</Color>` fica **literal**; aninhado não aninha: `<Color=Green>a <Color=Red>b</Color> c</Color>` imprime `a <Color=Red>b c</Color>`.
 | `SetLogFile(file_or_path)` | `''` desliga o arquivo; fecha o anterior |
 | `DeleteLog()` | apaga `Logger.FilePath` |
 | `Logger.FilePath`, `Logger.FileObj`, `Logger.ColorNames` | |
 
 Dicas: para silenciar o arquivo no início do script: `auto.Logger.SetLogFile('')`. As mensagens da própria lib ("Find Control Timeout", "Can not move cursor") passam por aqui. O flush do arquivo é feito a cada ≥2 s e no `atexit`.
 
-Funções de log de árvore: `LogControl(control, depth, showAllName, showPid)` — imprime ControlType, ClassName, AutomationId, Rect, Name, Handle, Depth e valores de patterns (Value, Toggle, Selection, ExpandCollapse, Scroll, Grid, Text). **Chama `GetPattern` para os 34 ids em cada controle** (lento em árvores grandes). `EnumAndLogControl(control, maxDepth, showAllName, showPid, startDepth)`, `EnumAndLogControlAncestors(control, ...)`. ⚠ Escrevem no arquivo de log, incluindo textos dos controles.
+Funções de log de árvore: `LogControl(control, depth, showAllName, showPid)` — imprime ControlType, ClassName, AutomationId, Rect, Name, Handle, Depth e valores de patterns (Value, Toggle, Selection, ExpandCollapse, Scroll, Grid, Text). **Chama `GetPattern` para os 34 ids em cada controle** (lento em árvores grandes). `EnumAndLogControl(control, maxDepth, showAllName, showPid, startDepth)`, `EnumAndLogControlAncestors(control, ...)`. ⚠ Escrevem no arquivo de log, incluindo textos dos controles. 🧪 Mede ~95 ms por controle (34 consultas de pattern) contra ~3 ms por controle do `WalkControl`.
 
 ## 7.5 `ProcessInfo`
 Atributos: `pid, ppid, exeName, is64Bit, exePath, cmdLine`. `str()` não fecha o parêntese final (cosmético).
+
+## Verificações (🧪) deste capítulo
+- **`Bitmap`:** construção (preto transparente `0x00000000`), `Set/GetPixelColor`, `Clear` (inclusive parcial), `GetPixelColorsOfRect/Row/Column/Horizontally/Vertically/All/Rects` (devolvem `ctypes.Array` de `c_uint32`), `SetPixelColors*` (lista Python ou array), `Copy`, `Paste` (com recorte e coordenadas negativas) e `PastePart`, `Resize`/`Rotate`/`RotateFlip` (novo bitmap; original intacto; `Rotate(90)` troca largura/altura, `Rotate(45)` aumenta; `backgroundColor` preenche os cantos).
+- **Arquivos:** `ToFile` em png/jpg/jpeg/bmp/gif/tif/tiff com o formato real conferido pelos primeiros bytes e `FromFile` devolvendo `PNG/JPEG/BMP/GIF/TIFF`; extensão desconhecida grava **PNG**; JPEG com `quality` maior gera arquivo maior; caminho inexistente → `False`/`None`; `ToBytes('BGRA')` em ordem B,G,R,A; `FromBytes` (BGRA e arquivo) e `AssertionError` com tamanho errado; formato desconhecido em `ToBytes` → PNG.
+- **Integrações:** `ToNDArray` `(h,w,4)`; `FromNDArray` com 3 e 4 canais (alfa 0xFF/preservado) e `AssertionError` em 2D; `ToPILImage` (RGBA, cores certas) e `FromPILImage` (RGB/RGBA; `AssertionError` em modo `L`).
+- **GIF/TIFF:** `GIF.ToGifFile` com atrasos (100/200/300 ms lidos de volta iguais), classe `GIF`, 3 quadros, iteração devolvendo `MemoryBMP`; sem `delays` → `TypeError`; `TIFF.ToTiffFile` multi-frame.
+- **Ciclo de vida:** `Close()`/`Release()`/`with`/duplo `Close` seguros; `Width/Height` viram 0.
+- **Captura:** `ToBitmap()` com o tamanho do controle e cor correta (`0xFFFF6347` no PictureBox "Tomato"); recortes `(x,y,w,h)`; `width/height < 0`; `CaptureToImage`; janela top‑level usa o retângulo DWM; `FromHandle`; `captureCursor=True`; elemento **sem HWND** (via ancestral); **janela por cima aparece no print** (não é a janela alvo); **janela minimizada sai preta** (bitmap 150×100 com o pixel central `0xFF000000`); controle de área zero captura o **pai**.
+- **`Logger`/`Rect`:** `import` não cria `@AutomationLog.txt`; a 1ª mensagem cria no diretório atual; `SetLogFile('')` desliga; `SetLogFile(path)` com append; `DeleteLog`; formato de `Log` (`data hora.ms arquivo[linha] função -> msg`) e nome da função chamadora; `printTruncateLen`; `printToStdout=False`; `ResetConsoleColor` antes de `SetConsoleColor` → `AssertionError`; sem console `SetConsoleColor` devolve `False`; `Input`/`InputColorfully` leem do stdin; `LogControl` grava o `Name` no arquivo; todos os métodos de `Rect` (inclusive `intersect` negativo, `offset` que muda o próprio objeto, `==`/`hash`).

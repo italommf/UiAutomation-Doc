@@ -42,11 +42,11 @@ Metadados: `Requires-Dist: comtypes>=1.2.1`, licença Apache 2.0, autor yinkaish
 | `METRO_WINDOW_CLASS_NAME` | `Windows.UI.Core.CoreWindow` | Janelas Metro do Win8 |
 | `S_OK` | 0 | Comparado com o retorno dos métodos COM |
 
-**Pegadinha dos defaults:** `waitTime: float = OPERATION_WAIT_TIME` é avaliado **na definição**. Alterar `auto.uiautomation.OPERATION_WAIT_TIME = 0.1` *depois do import* **não muda** os defaults já gravados nas assinaturas; passe `waitTime=` explicitamente. O mesmo vale para `SEARCH_INTERVAL`. Já `TIME_OUT_SECOND` é lido em tempo de execução (por `Element`), então `SetGlobalSearchTimeout()` funciona de verdade (testado: o timeout de acesso a controle inexistente passou a 3 s). `MAX_MOVE_SECOND` também é lido em runtime.
+**Pegadinha dos defaults:** `waitTime: float = OPERATION_WAIT_TIME` é avaliado **na definição**. Alterar `auto.uiautomation.OPERATION_WAIT_TIME = 0.1` *depois do import* **não muda** os defaults já gravados nas assinaturas; passe `waitTime=` explicitamente. O mesmo vale para `SEARCH_INTERVAL`. Já `TIME_OUT_SECOND` é lido em tempo de execução (por `Element`), então `SetGlobalSearchTimeout()` funciona de verdade (testado: o timeout de acesso a controle inexistente passou a 3 s). `MAX_MOVE_SECOND` também é lido em runtime. 🧪 Confirmado: depois de `OPERATION_WAIT_TIME = 0.01` o `SendKey` continuou dormindo 0,5 s e `inspect.signature` mostrou os defaults 0,5 inalterados. Também confirmados: o `import` **não** cria o COM nem carrega a DLL (`_AutomationClient._instance` e `_DllClient._instance` são `None`; o COM nasce no 1º `GetRootControl()` e a DLL no 1º `Bitmap`), o processo fica `PerMonitorDpiAware` (2), `user32.GetForegroundWindow.restype` passa de `c_long` para `c_void_p`, não existe `__all__` e `import *` exporta 295 nomes.
 
 ## Threads e COM
-- UIAutomation usa COM; cada thread precisa inicializá-lo: `with auto.UIAutomationInitializerInThread(): ...` ou `InitializeUIAutomationInCurrentThread()` / `UninitializeUIAutomationInCurrentThread()` (`CoInitializeEx`/`CoUninitialize`).
-- **Não passe `Control`/`Pattern` entre threads**; crie-os dentro da thread que os usa.
+- UIAutomation usa COM; cada thread precisa inicializá-lo: `with auto.UIAutomationInitializerInThread(): ...` ou `InitializeUIAutomationInCurrentThread()` / `UninitializeUIAutomationInCurrentThread()` (`CoInitializeEx`/`CoUninitialize`). 🧪 Nos testes, uma thread **sem** o inicializador conseguiu chamar `GetRootControl()` (o `comtypes` inicializou sozinho); com o inicializador, 4 threads paralelas buscaram e leram propriedades sem problema.
+- **Não passe `Control`/`Pattern` entre threads** (o docstring da lib diz que não é suportado). 🧪 Num teste, um `Control` criado na thread principal foi lido em outra thread (`Name` voltou) — funcionou, mas **não é garantido**; crie os controles na thread que os usa.
 - `RunByHotKey` roda cada função de hotkey numa thread própria e termina o processo com `os._exit(0)`.
 
 ## Modelo de "Control preguiçoso" (lazy)
@@ -60,7 +60,7 @@ Controles criados de um `element` direto (ex.: via `GetChildren()`, `ControlFrom
 ## Hierarquia de classes
 ```
 Control
- ├─ 40 tipos (ButtonControl, EditControl, ...)
+ ├─ 41 tipos (ButtonControl, EditControl, ...)
  ├─ PaneControl(Control, TopLevel)
  └─ WindowControl(Control, TopLevel)
 TopLevel (mixin: Maximize, Minimize, Restore, SetTopmost, SetActive, MoveToCenter...)
